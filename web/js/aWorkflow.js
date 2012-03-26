@@ -25,13 +25,15 @@ function aWorkflowConstructor()
       var toolbar = $('<div class="a-ui a-workflow-toolbar clearfix><ul class="a-ui a-controls clearfix"></ul></div>');
       $('.a-global-toolbar').after(toolbar);
       var draft = button('draft', 'Draft', state === 'draft', apostrophe.addParameterToUrl(document.location.href, 'view-published', 0));
+      if (state === 'draft')
+      {
+        publish = button('publish', 'Publish', false, '#');
+        publish.click(function() {
+          self.sync();
+          return false;
+        });
+      }
       var published = button('published', 'Published', state === 'published', apostrophe.addParameterToUrl(document.location.href, 'view-published', 1));
-      var publish = button('publish', 'Publish', false, '#');
-      toolbar.append(publish);
-      publish.click(function() {
-        self.sync();
-        return false;
-      });
       // Set up the toolbar only once
       $('body').unbind('aAfterJsCalls.aWorkflowToolbar');
       function button(name, label, current, href)
