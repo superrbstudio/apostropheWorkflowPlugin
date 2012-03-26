@@ -1,0 +1,5 @@
+a_workflow_publish:
+  url: /admin/workflow/publish
+  params:
+    module: aWorkflow
+    action: publish
