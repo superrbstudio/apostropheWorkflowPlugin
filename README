@@ -1,0 +1,15 @@
+apostropheWorkflowPlugin is a simple workflow solution when content must be specifically approved by a designated person before it goes live.
+
+This plugin ensures that all slot edits are approved by someone with the 'admin' credential.
+
+Those with edit privileges who do not have the 'admin' credential can edit content, but their changes are not immediately live, and they cannot make them go live on their own.
+
+Those with the 'admin' credential see a new 'workflow toolbar' (which has not been styled, and needs a way to pass a markup template). Admins see "draft," "published" and "publish" buttons here. In draft mode you can edit but changes are not immediately live. In "published" mode you see what is currently published on the live site; you cannot edit directly here. When you click "publish," everything you saw in "draft" becomes live.
+
+This is implemented using a separate virtual page that stands in for each live page during editing operations. By adding a few Symfony events to the core plugins we have been able to keep most of the logic involved in the workflow plugin, minimizing the impact on the core.
+
+The user interface of this plugin is still very basic and will evolve a bit.
+
+Yes, blog posts and other virtual pages *are* affected by workflow.
+
+For best results you will want to configure your site so that newly created pages are not published, otherwise editors can make new, empty pages that people see. TODO: restrict the publishing of pages to the 'admin' credential when this plugin is present.
