@@ -43,18 +43,16 @@ class apostropheWorkflowPluginConfiguration extends sfPluginConfiguration
     }
     if (sfContext::getInstance()->getRequest()->getParameter('view-published'))
     {
+      // error_log("View is published so not doing anything interesting");
       return;
     }
     $this->globalSetupActive = true;
     $newSlug = false;
     $page = null;
-    error_log("Pushing");
-    if (aTools::isPotentialEditor())
+    if (aTools::isPotentialEditor() || (isset($options['edit']) && $options['edit']))
     {
-      error_log("isPotentialEditor");
       $page = aTools::getCurrentPage();
       $slug = $page->getSlug();
-      error_log("For slug $slug");
       $newSlug = 'aWorkflowDraftFor:' . $page->getId();
       aTools::globalSetup(array('slug' => $newSlug, 'aWorkflowDraftPush' => true));
     }
@@ -79,7 +77,6 @@ class apostropheWorkflowPluginConfiguration extends sfPluginConfiguration
     $this->globalShutdownActive = true;
     if (count($this->pageStateStack))
     {
-      error_log("Popping");
       $pageInfo = array_shift($this->pageStateStack);
       if ($pageInfo['slug'] !== false)
       {
@@ -97,14 +94,11 @@ class apostropheWorkflowPluginConfiguration extends sfPluginConfiguration
    */
   public function pageCheckPrivilege($event, $result)
   {
-    error_log("Entering with " . $this->inPageCheckPrivilege);
     // Someone tell me why ++ doesn't work here please
     $this->inPageCheckPrivilege = $this->inPageCheckPrivilege + 1;
-    error_log("Then " . $this->inPageCheckPrivilege);
     // Let our recursive queries to find out the privileges of the original page work
     if ($this->inPageCheckPrivilege > 1)
     {
-      error_log("Passthrough");
       $this->inPageCheckPrivilege = $this->inPageCheckPrivilege - 1;
       return $result;
     }
@@ -112,28 +106,56 @@ class apostropheWorkflowPluginConfiguration extends sfPluginConfiguration
     $privilege = $event['privilege'];
     $pageInfo = $event['pageInfo'];
     $user = $event['user'];
-    error_log("pageCheckPrivilege ${pageInfo['id']} $privilege");
-    if (count($this->pageStateStack) && (preg_match('/^aWorkflowDraftFor:(\d+)$/', $pageInfo['slug'], $matches)))
+    if (preg_match('/^aWorkflowDraftFor:(\d+)$/', $pageInfo['slug'], $matches))
     {
       $pageId = $matches[1];
-      error_log("Checking a draft");
-      // The real page object of interest should be on the stack
-      for ($i = count($this->pageStateStack) - 1; ($i >= 0); $i--)
+      $pageOfInterest = null;
+      // The real page object of interest may be on the stack already, avoid a redundant query
+      $i = count($this->pageStateStack) - 1;
+      while ($i >= 0)
       {
         $loopPageInfo = $this->pageStateStack[$i]['page'];
         if ($loopPageInfo['id'] === $pageId)
         {
-          $result = Doctrine::getTable('aPage')->checkUserPrivilege($privilege, $loopPageInfo, $user);
-          error_log("Result for draft is $result");
-          $this->inPageCheckPrivilege = $this->inPageCheckPrivilege - 1;
-          return $result;
+          $pageOfInterest = $loopPageInfo;
+          break;
+        }
+        $i--;
+      }
+      if (!$pageOfInterest)
+      {
+        // If we're saving a choice of image or performing some other action that's
+        // not a conventional edit view save action then the page object might not
+        // be on the stack already, so go get it. getInfo() won't cut it because
+        // it's build on getPagesInfo which returns only pages this user can see
+        // via the normal scheme of page tree permissions. 
+        $pagesOfInterest = Doctrine::getTable('aPage')->createQuery('p')->where('p.id = ?', $pageId)->fetchArray();
+        if (count($pagesOfInterest))
+        {
+          $pageOfInterest = $pagesOfInterest[0];
         }
       }
+      if ($pageOfInterest)
+      {
+        // If an explicit 'edit' option was used, we don't have to check the privileges
+        // on the real page, although it's good that we made sure there was one as a sanity check
+        if (isset($event['edit']))
+        {
+          $result = $event['edit'];
+        }
+        else
+        {
+          $result = Doctrine::getTable('aPage')->checkUserPrivilege($privilege, $pageOfInterest, $user);
+        }
+        $this->inPageCheckPrivilege = $this->inPageCheckPrivilege - 1;
+        return $result;
+      }
+      return false;
     }
     else if (!in_array($privilege, array('view', 'view_custom')))
     {
-      // You can't edit a non-draft page directly
-      error_log("Flunking direct edit");
+      // You can't edit a non-draft page directly bucko, I don't care if
+      // you passed the 'edit' => true flag or not
       $this->inPageCheckPrivilege = $this->inPageCheckPrivilege - 1;
       return false;
     }
