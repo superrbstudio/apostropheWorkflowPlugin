@@ -15,8 +15,11 @@ class apostropheWorkflowPluginConfiguration extends sfPluginConfiguration
     {
       $this->dispatcher->connect('a.afterGlobalSetup', array($this, 'afterGlobalSetup'));
       $this->dispatcher->connect('a.afterGlobalShutdown', array($this, 'afterGlobalShutdown'));
-      $this->dispatcher->connect('a.pageCheckPrivilege', array($this, 'pageCheckPrivilege'));
+      $this->dispatcher->connect('a.filterPageCheckPrivilege', array($this, 'filterPageCheckPrivilege'));
       $this->dispatcher->connect('a.afterAreaComponent', array($this, 'afterAreaComponent'));
+      $this->dispatcher->connect('a.filterNewPage', array($this, 'filterNewPage'));
+      $this->dispatcher->connect('a.filterPageSettingsForm', array($this, 'filterPageSettingsForm'));
+      $this->dispatcher->connect('a.filterValidAndEditable', array($this, 'filterValidAndEditable'));
       self::$registered = true;
     }
   }
@@ -29,6 +32,20 @@ class apostropheWorkflowPluginConfiguration extends sfPluginConfiguration
   protected $globalSetupActive = false;
   protected $globalShutdownActive = false;
   
+  /**
+   * Returns true if this user should be able to publish content. By default they must have
+   * the admin credential. Filter the aWorkflow.filterPublishPrivilege event to alter that
+   * at project level or in another plugin
+   */
+  public function hasPublishPrivilege()
+  {
+    $result = sfContext::getInstance()->getUser()->hasCredential('admin');
+    $event = new sfEvent($this, 'aWorkflow.filterPublishPrivilege', array());
+    sfContext::getInstance()->getEventDispatcher()->filter($event, $result);
+    return $event->getReturnValue();
+
+  }
+
   /**
    * Listen for newly completed aTools::globalSetup calls and push a virtual page 
    * as a substitute for any regular page (so everyone edits drafts, not the published versions).
@@ -92,9 +109,15 @@ class apostropheWorkflowPluginConfiguration extends sfPluginConfiguration
    * If Apostrophe tries to check privileges on a workflow draft, check the
    * privileges of the actual page backing it instead
    */
-  public function pageCheckPrivilege($event, $result)
+  public function filterPageCheckPrivilege($event, $result)
   {
-    // Someone tell me why ++ doesn't work here please
+    // If a page is published and you don't have the privilege of publishing edits, then you
+    // can't delete that page either
+    if (($event['privilege'] === 'delete') && (!$pageInfo['archived']) && (!$this->hasPublishPrivilege()))
+    {
+      return false;
+    }
+    // Someone tell me why ++ doesn't work here please (really, it doesn't after the first nesting level; I did tests)
     $this->inPageCheckPrivilege = $this->inPageCheckPrivilege + 1;
     // Let our recursive queries to find out the privileges of the original page work
     if ($this->inPageCheckPrivilege > 1)
@@ -152,7 +175,11 @@ class apostropheWorkflowPluginConfiguration extends sfPluginConfiguration
       }
       return false;
     }
-    else if (!in_array($privilege, array('view', 'view_custom')))
+    /**
+     * Careful, don't block the 'manage' privilege, there
+     * is no workflow for changing page permissions
+     */
+    else if (!in_array($privilege, array('view', 'view_custom', 'manage')))
     {
       // You can't edit a non-draft page directly bucko, I don't care if
       // you passed the 'edit' => true flag or not
@@ -187,5 +214,48 @@ class apostropheWorkflowPluginConfiguration extends sfPluginConfiguration
     }
     aTools::$jsCalls[] = array('callable' => 'aWorkflow.registerArea(?)', 
       'args' => array(array('id' => $event['page']['id'], 'name' => $event['name'], 'editable' => $event['editable'], 'infinite' => $event['infinite'])));
+  }
+
+  /**
+   * Make sure pages are born unpublished unless we're an admin
+   */
+  public function filterNewPage($event, $page)
+  {
+    if (!sfContext::getInstance()->getUser()->hasCredential('admin'))
+    {
+      $page->setArchived(true);
+    }
+    return $page;
+  }
+
+
+  /**
+   * Remove the ability to publish or unpublish the page unless we're an admin
+   */
+  public function filterPageSettingsForm($event, $form)
+  {
+    if (!sfContext::getInstance()->getUser()->hasCredential('admin'))
+    {
+      unset($form['archived']);
+    }
+    return $form;
+  }
+
+  /**
+   * The 'a' module calls a validAndEditable() method to make sure the user has
+   * privileges to open page settings for a page and perform similar operations.
+   * Our intercept of the filterPageCheckPrivilege event frustrates that.
+   * Work around it by using the inPageCheckPrivilege flag to simulate a recursive
+   * call; in such situations our event handler backs off and returns the
+   * unaltered result for the page
+   */
+  public function filterValidAndEditable($event, $result)
+  {
+    // Please don't change this to ++, I reproduced a bug with that somehow!
+    $this->inPageCheckPrivilege = $this->inPageCheckPrivilege + 1;
+    $result = $event->getSubject()->userHasPrivilege($event['privilege']);
+    $this->inPageCheckPrivilege = $this->inPageCheckPrivilege - 1;
+    aTools::globalShutdown();
+    return $result;
   }
 }
