@@ -36,11 +36,21 @@ function aWorkflowConstructor()
       var published = button('published', 'Published', state === 'published', apostrophe.addParameterToUrl(document.location.href, 'view-published', 1));
       // Set up the toolbar only once
       $('body').unbind('aAfterJsCalls.aWorkflowToolbar');
+
+      /**
+       * Create a button such as Draft, Publish or Published. Show a busy indicator when clicked.
+       * Draft and published load new pages so they don't need to clear this, but you can clear it
+       * by calling unbusy(button) as I do for the 'publish' button when the sync finishes
+       */
       function button(name, label, current, href)
       {
-        var b = $('<li class="' + (current ? 'a-workflow-current' : '') + ' a-workflow-toolbar-' + name + '"><a class="a-btn alt no-bg">' + label + '</a></li>');
-        $(b).find('a').attr('href', href);
+        var b = $('<li class="' + (current ? 'a-workflow-current' : '') + ' a-workflow-toolbar-' + name + '"><a class="a-btn alt no-bg a-busy">' + label + '<span class="icon"></span></a></li>');
+        b.find('a').attr('href', href);
         toolbar.append(b);
+        b.click(function() {
+          busy(b);
+          return true;
+        });
         return b;
       }
     });
@@ -62,11 +72,22 @@ function aWorkflowConstructor()
   this.sync = function()
   {
     $.post(action, $.param({ 'areas': areas }), function() {
-      // Obviously this is not the final UI
-      alert('Content synced. Refresh in a logged-out browser to verify.');
+      unbusy(publish);
+      alert('Content synced. Switch to the "published" view to verify.');
     });
   };
 
+  function busy(button)
+  {
+    button.find('a').addClass('icon').addClass('a-busy');
+    button.find('a').addClass('a-busy');
+  }
+
+  function unbusy(button)
+  {
+    button.find('a').removeClass('icon').removeClass('a-busy');
+    button.find('a').removeClass('a-busy');
+  }
 }
 
 var aWorkflow = new aWorkflowConstructor();
