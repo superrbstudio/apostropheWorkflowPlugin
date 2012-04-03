@@ -44,7 +44,7 @@ function aWorkflowConstructor()
        */
       function button(name, label, current, href)
       {
-        var b = $('<li class="' + (current ? 'a-workflow-current' : '') + ' a-workflow-toolbar-' + name + '"><a class="a-btn alt no-bg a-busy">' + label + '<span class="icon"></span></a></li>');
+        var b = $('<li class="' + (current ? 'a-workflow-current' : '') + ' a-workflow-toolbar-' + name + '"><a class="a-btn alt a-busy">' + label + '<span class="icon"></span></a></li>');
         b.find('a').attr('href', href);
         toolbar.append(b);
         b.click(function() {
