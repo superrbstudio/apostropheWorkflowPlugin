@@ -141,7 +141,10 @@ class apostropheWorkflowPluginConfiguration extends sfPluginConfiguration
   {
     if (!$this->canApply())
     {
-      unset($form['archived']);
+      if (isset($form['archived']))
+      {
+        unset($form['archived']);
+      }
     }
     return $form;
   }
