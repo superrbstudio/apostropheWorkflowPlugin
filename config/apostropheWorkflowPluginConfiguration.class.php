@@ -22,6 +22,7 @@ class apostropheWorkflowPluginConfiguration extends sfPluginConfiguration
       $this->dispatcher->connect('a.filterNextVersion', array($this, 'filterNextVersion'));
       $this->dispatcher->connect('a.filterSetLatestVersion', array($this, 'filterSetLatestVersion'));
       $this->dispatcher->connect('a.filterAreaEditable', array($this, 'filterAreaEditable'));
+      $this->dispatcher->connect('a.filterBlogItemForm', array($this, 'filterBlogItemForm'));
       self::$registered = true;
     }
   }
@@ -139,6 +140,7 @@ class apostropheWorkflowPluginConfiguration extends sfPluginConfiguration
    */
   public function filterPageSettingsForm($event, $form)
   {
+    error_log("Hello");
     if (!$this->canApply())
     {
       if (isset($form['archived']))
@@ -188,6 +190,21 @@ class apostropheWorkflowPluginConfiguration extends sfPluginConfiguration
       $editable = false;
     }
     return $editable;
+  }
+
+  /**
+   * Filter a blog item edit form. This Symfony event applies to both Apostrophe blog posts and Apostrophe events.
+   * We want to remove the 'publication' dropdown when the user does not have permission to apply changes, because
+   * it can be used to change what appears to end users.
+   */
+  public function filterBlogItemForm($event, $form)
+  {
+    if (!$this->canApply())
+    {
+      error_log("Unsetting");
+      unset($form['publication']);
+    }
+    return $form;
   }
 
   /**
