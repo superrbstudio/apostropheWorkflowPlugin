@@ -13,203 +13,108 @@ class apostropheWorkflowPluginConfiguration extends sfPluginConfiguration
     
     if (!self::$registered)
     {
-      $this->dispatcher->connect('a.afterGlobalSetup', array($this, 'afterGlobalSetup'));
-      $this->dispatcher->connect('a.afterGlobalShutdown', array($this, 'afterGlobalShutdown'));
+      $this->dispatcher->connect('a.filterVersionJoin', array($this, 'filterVersionJoin'));
       $this->dispatcher->connect('a.filterPageCheckPrivilege', array($this, 'filterPageCheckPrivilege'));
       $this->dispatcher->connect('a.afterAreaComponent', array($this, 'afterAreaComponent'));
+      $this->dispatcher->connect('a.migrateSchemaAdditions', array($this, 'migrate'));
       $this->dispatcher->connect('a.filterNewPage', array($this, 'filterNewPage'));
       $this->dispatcher->connect('a.filterPageSettingsForm', array($this, 'filterPageSettingsForm'));
-      $this->dispatcher->connect('a.filterValidAndEditable', array($this, 'filterValidAndEditable'));
+      $this->dispatcher->connect('a.filterNextVersion', array($this, 'filterNextVersion'));
+      $this->dispatcher->connect('a.filterSetLatestVersion', array($this, 'filterSetLatestVersion'));
+      $this->dispatcher->connect('a.filterAreaEditable', array($this, 'filterAreaEditable'));
       self::$registered = true;
     }
   }
 
-  protected $pageStateStack = array();
+  /**
+   * Standard Apostrophe tracks the latest version. Also track the latest draft version.
+   * Note that we show whichever is greater in draft mode, which allows us to use the workflow
+   * plugin right away in an existing project without seeming to lose existing content. It also
+   * protects us from problems if there is project level or plugin code that doesn't know about
+   * draft mode and which also updates latest_version
+   */
+
+  public function migrate($event)
+  {
+    $migrate = $event->getSubject();
+    if (!$migrate->columnExists('a_area', 'draft_version'))
+    {
+      $migrate->sql(array('ALTER TABLE a_area ADD COLUMN draft_version BIGINT DEFAULT NULL'));
+    }
+  }
 
   /**
-   * Recursion guards
+   * Returns true if this user should be able to apply changes so they appear to the public.
+   * By default they must have the admin credential. Filter the aWorkflow.filterCanApply 
+   * event to alter that at project level or in another plugin
    */
-  protected $globalSetupActive = false;
-  protected $globalShutdownActive = false;
-  
-  /**
-   * Returns true if this user should be able to publish content. By default they must have
-   * the admin credential. Filter the aWorkflow.filterPublishPrivilege event to alter that
-   * at project level or in another plugin
-   */
-  public function hasPublishPrivilege()
+  public function canApply()
   {
     $result = sfContext::getInstance()->getUser()->hasCredential('admin');
-    $event = new sfEvent($this, 'aWorkflow.filterPublishPrivilege', array());
+    $event = new sfEvent($this, 'aWorkflow.filterCanApply', array());
     sfContext::getInstance()->getEventDispatcher()->filter($event, $result);
     return $event->getReturnValue();
 
   }
 
   /**
-   * Listen for newly completed aTools::globalSetup calls and push a virtual page 
-   * as a substitute for any regular page (so everyone edits drafts, not the published versions).
-   * Keep a stack of the original pages Push 'false' on the stack if we didn't make a change
-   * so we can determine whether we need to make an extra globalShutdown() call
+   * Replace the standard version join with one that pays attention to draft versions,
+   * if we are in draft mode. We want the newer of latest_version and draft_version. Also
+   * make sure we pull the one that is non-null, if any.
    */
-  public function afterGlobalSetup($event)
-  {
-    if ($this->globalSetupActive)
+  public function filterVersionJoin($event, $versionJoin)
+  {    
+    $mode = $this->getMode();
+    if ((!$event['version']) && ($mode === 'draft'))
     {
-      return;
+      // Rebuild the join if we are in draft mode and not pulling an explicit version number
+      $versionJoin = array();
+      $versionJoin['args'] = array();
+      $versionJoin['clauses'] = array();
+      $versionJoin['clauses'][] = 'a.AreaVersions v';
+      // We want the newest version 
+      // Use COALESCE to avoid always matching the thing that's NULL (that's just how GREATEST rolls).
+      // Use GREATEST rather than MAX because we are comparing two columns in the same row, which is
+      // not what MAX is for (MAX is for aggregation over many rows)
+      $versionJoin['clauses'][] = 'WITH GREATEST(COALESCE(a.latest_version, 0), COALESCE (a.draft_version, 0)) = v.version';
     }
-    if (sfContext::getInstance()->getRequest()->getParameter('view-published'))
-    {
-      // error_log("View is published so not doing anything interesting");
-      return;
-    }
-    $this->globalSetupActive = true;
-    $newSlug = false;
-    $page = null;
-    if (aTools::isPotentialEditor() || (isset($options['edit']) && $options['edit']))
-    {
-      $page = aTools::getCurrentPage();
-      $slug = $page->getSlug();
-      $newSlug = 'aWorkflowDraftFor:' . $page->getId();
-      aTools::globalSetup(array('slug' => $newSlug, 'aWorkflowDraftPush' => true));
-    }
-    $this->globalSetupActive = false;
-    $this->pageStateStack[] = array('slug' => $newSlug, 'page' => $page);
+    return $versionJoin;
   }
 
   /**
-   * Make the extra globalShutdown call to remove any 
-   * workflow virtual pa[ges from the stack
-   */
-  public function afterGlobalShutdown($event)
-  {
-    if ($this->globalShutdownActive)
-    {
-      return;
-    }
-    if (sfContext::getInstance()->getRequest()->getParameter('view-published'))
-    {
-      return;
-    }
-    $this->globalShutdownActive = true;
-    if (count($this->pageStateStack))
-    {
-      $pageInfo = array_shift($this->pageStateStack);
-      if ($pageInfo['slug'] !== false)
-      {
-        aTools::globalShutdown();
-      }
-    }
-    $this->globalShutdownActive = false;
-  }
-
-  protected $inPageCheckPrivilege = 0;
-
-  /**
-   * If Apostrophe tries to check privileges on a workflow draft, check the
-   * privileges of the actual page backing it instead
+   * If you don't have the apply privilege then you can't delete or manage a published page either as that
+   * would affect what is visible to the end user too. See also a.filterAreaEditable - we don't have to 
+   * address the 'edit' privilege here
+   * 
    */
   public function filterPageCheckPrivilege($event, $result)
   {
-    // If a page is published and you don't have the privilege of publishing edits, then you
-    // can't delete that page either
-    if (($event['privilege'] === 'delete') && (!$pageInfo['archived']) && (!$this->hasPublishPrivilege()))
-    {
-      return false;
-    }
-    // Someone tell me why ++ doesn't work here please (really, it doesn't after the first nesting level; I did tests)
-    $this->inPageCheckPrivilege = $this->inPageCheckPrivilege + 1;
-    // Let our recursive queries to find out the privileges of the original page work
-    if ($this->inPageCheckPrivilege > 1)
-    {
-      $this->inPageCheckPrivilege = $this->inPageCheckPrivilege - 1;
-      return $result;
-    }
-    $this->inPageCheckPrivilege = true;
-    $privilege = $event['privilege'];
     $pageInfo = $event['pageInfo'];
-    $user = $event['user'];
-    if (preg_match('/^aWorkflowDraftFor:(\d+)$/', $pageInfo['slug'], $matches))
+    if (in_array($event['privilege'], array('delete', 'manage')) && (!$pageInfo['archived']) && (!$this->canApply()))
     {
-      $pageId = $matches[1];
-      $pageOfInterest = null;
-      // The real page object of interest may be on the stack already, avoid a redundant query
-      $i = count($this->pageStateStack) - 1;
-      while ($i >= 0)
-      {
-        $loopPageInfo = $this->pageStateStack[$i]['page'];
-        if ($loopPageInfo['id'] === $pageId)
-        {
-          $pageOfInterest = $loopPageInfo;
-          break;
-        }
-        $i--;
-      }
-      if (!$pageOfInterest)
-      {
-        // If we're saving a choice of image or performing some other action that's
-        // not a conventional edit view save action then the page object might not
-        // be on the stack already, so go get it. getInfo() won't cut it because
-        // it's build on getPagesInfo which returns only pages this user can see
-        // via the normal scheme of page tree permissions. 
-        $pagesOfInterest = Doctrine::getTable('aPage')->createQuery('p')->where('p.id = ?', $pageId)->fetchArray();
-        if (count($pagesOfInterest))
-        {
-          $pageOfInterest = $pagesOfInterest[0];
-        }
-      }
-      if ($pageOfInterest)
-      {
-        // If an explicit 'edit' option was used, we don't have to check the privileges
-        // on the real page, although it's good that we made sure there was one as a sanity check
-        if (isset($event['edit']))
-        {
-          $result = $event['edit'];
-        }
-        else
-        {
-          $result = Doctrine::getTable('aPage')->checkUserPrivilege($privilege, $pageOfInterest, $user);
-        }
-        $this->inPageCheckPrivilege = $this->inPageCheckPrivilege - 1;
-        return $result;
-      }
       return false;
     }
-    /**
-     * Careful, don't block the 'manage' privilege, there
-     * is no workflow for changing page permissions
-     */
-    else if (!in_array($privilege, array('view', 'view_custom', 'manage')))
-    {
-      // You can't edit a non-draft page directly bucko, I don't care if
-      // you passed the 'edit' => true flag or not
-      $this->inPageCheckPrivilege = $this->inPageCheckPrivilege - 1;
-      return false;
-    }
-    else
-    {
-      $this->inPageCheckPrivilege = $this->inPageCheckPrivilege - 1;
-      return $result;
-    }
+    return $result;
   }
 
   protected $jsSetup = false;
 
   /**
-   * This runs in the context of a partial
+   * Register each editable area so that javascript can request that all the editable areas' changes be applied.
+   * Also initialize the client-side javascript (just once).
    */
   public function afterAreaComponent($event)
   {
-    // Only admins can publish, so don't show this bar to other users
-    if (!sfContext::getInstance()->getUser()->hasCredential('admin'))
-    {
-      return;
-    }
     if (!$this->jsSetup)
     {
       aTools::$jsCalls[] = array('callable' => 'aWorkflow.setup(?)', 'args' => array(array(
         'action' => sfContext::getInstance()->getController()->genUrl('@a_workflow_publish'),
-        'state' => sfContext::getInstance()->getRequest()->getParameter('view-published') ? 'published' : 'draft')));
+        // draft or published: what we are seeing now (we can't edit until we leave published mode)
+        'mode' => $this->getMode(),
+        // Privilege of applying changes so they become publicly visible
+        'canApply' => $this->canApply(),
+        'setModeUrl' => sfContext::getInstance()->getController()->genUrl('@a_workflow_set_mode')
+        )));
       $this->jsSetup = true;
     }
     aTools::$jsCalls[] = array('callable' => 'aWorkflow.registerArea(?)', 
@@ -221,7 +126,7 @@ class apostropheWorkflowPluginConfiguration extends sfPluginConfiguration
    */
   public function filterNewPage($event, $page)
   {
-    if (!sfContext::getInstance()->getUser()->hasCredential('admin'))
+    if (!$this->canApply())
     {
       $page->setArchived(true);
     }
@@ -234,7 +139,7 @@ class apostropheWorkflowPluginConfiguration extends sfPluginConfiguration
    */
   public function filterPageSettingsForm($event, $form)
   {
-    if (!sfContext::getInstance()->getUser()->hasCredential('admin'))
+    if (!$this->canApply())
     {
       unset($form['archived']);
     }
@@ -242,20 +147,60 @@ class apostropheWorkflowPluginConfiguration extends sfPluginConfiguration
   }
 
   /**
-   * The 'a' module calls a validAndEditable() method to make sure the user has
-   * privileges to open page settings for a page and perform similar operations.
-   * Our intercept of the filterPageCheckPrivilege event frustrates that.
-   * Work around it by using the inPageCheckPrivilege flag to simulate a recursive
-   * call; in such situations our event handler backs off and returns the
-   * unaltered result for the page
+   * We need a version number for a new aAreaVersion. Normally it's area.latest_version + 1, but
+   * the presence of draft versions can change that
    */
-  public function filterValidAndEditable($event, $result)
+  public function filterNextVersion($event, $n)
   {
-    // Please don't change this to ++, I reproduced a bug with that somehow!
-    $this->inPageCheckPrivilege = $this->inPageCheckPrivilege + 1;
-    $result = $event->getSubject()->userHasPrivilege($event['privilege']);
-    $this->inPageCheckPrivilege = $this->inPageCheckPrivilege - 1;
-    aTools::globalShutdown();
-    return $result;
+    return  max($event['area']['latest_version'], $event['area']['draft_version']) + 1;
+  }
+
+  /**
+   * We need to store the latest verion number in the $area object. Normally
+   * area.latest_version is set to the version property of the new aAreaVersion object,
+   * but in draft mode we want to set area.draft_version instead. For this event we 
+   * modify $event['area'] directly and return true to signify that we don't want the
+   * default behavior. This design means we don't have to figure out how to
+   * undo the default behavior
+   */
+  public function filterSetLatestVersion($event, $overridden)
+  {
+    if ($this->getMode() === 'draft')
+    {
+      $event['area']['draft_version'] = $event['version'];
+      $overridden = true;
+    }
+    return $overridden;
+  }
+
+  /**
+   * This filter lets us override the editable of a slot or area just like
+   * the 'edit' option would, but is applied after that option so our decision
+   * is final
+   */
+  public function filterAreaEditable($event, $editable)
+  {
+    if ($this->getMode() === 'applied')
+    {
+      $editable = false;
+    }
+    return $editable;
+  }
+
+  /**
+   * Are we in draft mode (see the latest edits and add more edits) or applied mode
+   * (see the live content, don't edit directly)?
+   */
+  public function getMode()
+  {
+    $user = sfContext::getInstance()->getUser();
+    if (aTools::isPotentialEditor($user))
+    {
+      // It is critical to default to applied mode so that admin users created for tasks, etc.
+      // do the right thing and directly create a new latest version of each page
+      return sfContext::getInstance()->getUser()->getAttribute('mode', 'applied', 'aWorkflow');
+    }
+    // Noneditors and logged out users always see the applied content
+    return 'applied';
   }
 }

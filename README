@@ -4,12 +4,14 @@ This plugin ensures that all slot edits are approved by someone with the 'admin'
 
 Those with edit privileges who do not have the 'admin' credential can edit content, but their changes are not immediately live, and they cannot make them go live on their own.
 
-Those with the 'admin' credential see a new 'workflow toolbar' (which has not been styled, and needs a way to pass a markup template). Admins see "draft," "published" and "publish" buttons here. In draft mode you can edit but changes are not immediately live. In "published" mode you see what is currently published on the live site; you cannot edit directly here. When you click "publish," everything you saw in "draft" becomes live.
+Those with the 'admin' credential see a new 'workflow toolbar' (which has not been styled, and needs a way to pass a markup template). Admins see "draft," "apply" and "applied" buttons here. In draft mode you can edit but changes are not immediately live. In "applied" mode you see what is currently published on the live site; you cannot edit directly here. When you click "apply," everything you saw in "draft" becomes live.
 
-This is implemented using a separate virtual page that stands in for each live page during editing operations. By adding a few Symfony events to the core plugins we have been able to keep most of the logic involved in the workflow plugin, minimizing the impact on the core.
+This is implemented using a separate draft_version column in the a_area table, complementing the latest_version column. latest_version is used for all logged-out users and in "applied" mode. The greater of draft_version and latest_version (or whichever is not null) is used in "draft" mode. This is a substantial improvement over the first implementation of this plugin, which used separate virtual pages as stand-ins for each page, because it requires far less code and the upgrade is painless, with no need for a task to sync "back" to draft.
 
 The user interface of this plugin is still very basic and will evolve a bit.
 
-Yes, blog posts and other virtual pages *are* affected by workflow.
+Yes, blog posts and other virtual pages *are* affected by workflow. Everything that is editable by you in the current browser window gets updated when you click "apply."
 
-For best results you will want to configure your site so that newly created pages are not published, otherwise editors can make new, empty pages that people see. TODO: restrict the publishing of pages to the 'admin' credential when this plugin is present.
+For best results you will want to configure your site so that newly created pages are not published, otherwise editors can make new, empty pages that people see. Note that only admins can publish pages when this plugin is present (others might be able to create them, but they can't check the "published" box to make them live).
+
+TODO: prevent non-admins from making blog posts live when this plugin is present.

@@ -1,0 +1,5 @@
+#Track the latest unapproved version, as well as the latest approved version (current_version).
+aArea:
+  columns:
+    draft_version:
+      type: integer

@@ -2,10 +2,16 @@ function aWorkflowConstructor()
 {
   var areas;
   var action;
+  var setMode;
   var initialized = false;
   var toolbar;
   var self = this;
-  var state = 'draft';
+  var mode;
+
+  // Buttons
+  var draft;
+  var apply;
+  var applied;
 
   this.setup = function(options)
   {
@@ -14,7 +20,7 @@ function aWorkflowConstructor()
     {
       return;
     }
-    state = options.state;
+    mode = options.mode;
     areas = [];
     initialized = true;
     action = options.action;
@@ -24,23 +30,25 @@ function aWorkflowConstructor()
     $('body').bind('aAfterJsCalls.aWorkflowToolbar', function() {
       var toolbar = $('<div class="a-ui a-workflow-toolbar clearfix><ul class="a-ui a-controls clearfix"></ul></div>');
       $('.a-global-toolbar').after(toolbar);
-      var draft = button('draft', 'Draft', state === 'draft', apostrophe.addParameterToUrl(document.location.href, 'view-published', 0));
-      if (state === 'draft')
+      // Where to redirect back to (the browser knows best)
+      setMode = apostrophe.addParameterToUrl(options.setModeUrl, 'url', document.location.href);
+      draft = button('draft', 'Draft', mode === 'draft', apostrophe.addParameterToUrl(setMode, 'mode', 'draft'));
+      if ((mode === 'draft') && (options.canApply))
       {
-        publish = button('publish', 'Publish', false, '#');
-        publish.click(function() {
+        apply = button('apply', 'Apply', false, '#');
+        apply.click(function() {
           self.sync();
           return false;
         });
       }
-      var published = button('published', 'Published', state === 'published', apostrophe.addParameterToUrl(document.location.href, 'view-published', 1));
+      applied = button('applied', 'Applied', mode === 'applied', apostrophe.addParameterToUrl(setMode, 'mode', 'applied'));
       // Set up the toolbar only once
       $('body').unbind('aAfterJsCalls.aWorkflowToolbar');
 
       /**
-       * Create a button such as Draft, Publish or Published. Show a busy indicator when clicked.
-       * Draft and published load new pages so they don't need to clear this, but you can clear it
-       * by calling unbusy(button) as I do for the 'publish' button when the sync finishes
+       * Create a button such as Draft, Apply or Applied. Show a busy indicator when clicked.
+       * Draft and applied load new pages so they don't need to clear this, but you can clear it
+       * by calling unbusy(button) as I do for the 'apply' button when the sync finishes
        */
       function button(name, label, current, href)
       {
@@ -72,8 +80,7 @@ function aWorkflowConstructor()
   this.sync = function()
   {
     $.post(action, $.param({ 'areas': areas }), function() {
-      unbusy(publish);
-      alert('Content synced. Switch to the "published" view to verify.');
+      document.location.href = apostrophe.addParameterToUrl(setMode, 'mode', 'applied');
     });
   };
 

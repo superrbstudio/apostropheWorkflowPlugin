@@ -10,26 +10,35 @@ class aWorkflowActions extends sfActions
     {
       foreach ($areas as $area)
       {
-        $draftPageId = $area['id'];
+        $pageId = $area['id'];
         $name = $area['name'];
         $editable = $area['editable'];
         if ($editable)
         {
-          $draftPage = aPageTable::retrieveByIdWithSlots($draftPageId);
-          if (preg_match('/^aWorkflowDraftFor:(\d+)$/', $draftPage['slug'], $matches))
+          $area = aAreaTable::retrieveOrCreateByPageIdAndName($pageId, $name);
+          if (!$area->isNew())
           {
-            $pageId = $matches[1];
-            $page = aPageTable::retrieveByIdWithSlots($pageId);
-            if ($page && $draftPage)
-            {
-              error_log("Calling syncTo for " . $page['id'] . ',' . $draftPage['id'] . ',' . $name);
-              $draftPage->syncTo($page, $name);
-            }
+            // Can the latest version be newer than the draft version? Definitely, because
+            // we work from the latest version by default in draft mode if it is newer,
+            // either because this site just migrated to the plugin or because it has been
+            // updated by code that isn't savvy to the plugin
+            $area->latest_version = max($area->draft_version, $area->latest_version);
+            $area->save();
           }
         }
       }
     }
     echo(json_encode(array('status' => 'ok')));
     exit(0);
+  }
+  public function executeSetMode(sfWebRequest $request)
+  {
+    $mode = $request->getParameter('mode');
+    if (!in_array($mode, array('draft', 'applied')))
+    {
+      $this->forward404();
+    }
+    $this->getUser()->setAttribute('mode', $mode, 'aWorkflow');
+    return $this->redirect($request->getParameter('url'));
   }
 }

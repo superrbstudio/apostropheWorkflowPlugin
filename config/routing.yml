@@ -3,3 +3,9 @@ a_workflow_publish:
   params:
     module: aWorkflow
     action: publish
+
+a_workflow_set_mode:
+  url: /admin/workflow/set-mode
+  params:
+    module: aWorkflow
+    action: setMode
