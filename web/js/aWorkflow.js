@@ -29,19 +29,30 @@ function aWorkflowConstructor()
     var controlsInitialized = false;
     $('body').bind('aAfterJsCalls.aWorkflowToolbar', function() {
       var toolbar = $('<div class="a-ui a-workflow-toolbar clearfix><ul class="a-ui a-controls clearfix"></ul></div>');
+
       $('.a-global-toolbar').after(toolbar);
       // Where to redirect back to (the browser knows best)
       setMode = apostrophe.addParameterToUrl(options.setModeUrl, 'url', document.location.href);
+
+      //If we're in draft mode, apply a class of 'draft' to the toolbar to allow for bettert CSS scoping:
+      (mode == 'draft' ? $('.a-ui.a-workflow-toolbar').addClass('draft') : $('.a-ui.a-workflow-toolbar').addClass('applied') );
+
       draft = button('draft', 'Draft', mode === 'draft', apostrophe.addParameterToUrl(setMode, 'mode', 'draft'));
+
       if ((mode === 'draft') && (options.canApply))
       {
-        apply = button('apply', 'Apply', false, '#');
+       //Add the "Apply" button to the toolbar
+        apply = button('apply', 'Apply Changes', false, '#');
         apply.click(function() {
           self.sync();
           return false;
         });
       }
-      applied = button('applied', 'Applied', mode === 'applied', apostrophe.addParameterToUrl(setMode, 'mode', 'applied'));
+      applied = button('applied', 'Public', mode === 'applied', apostrophe.addParameterToUrl(setMode, 'mode', 'applied'));
+
+      modeAlert = '<li class="a-workflow-toolbar-alert">'+(mode == 'draft' ? 'You are currently in draft mode. Changes you make will not be public until applied.' : 'You are currently in public mode. This is the website as it exists in its published state.')+'</li>';
+      toolbar.append(modeAlert);
+
       // Set up the toolbar only once
       $('body').unbind('aAfterJsCalls.aWorkflowToolbar');
 
@@ -52,7 +63,7 @@ function aWorkflowConstructor()
        */
       function button(name, label, current, href)
       {
-        var b = $('<li class="' + (current ? 'a-workflow-current' : '') + ' a-workflow-toolbar-' + name + '"><a class="a-btn alt a-busy">' + label + '<span class="icon"></span></a></li>');
+        var b = $('<li class="' + (current ? 'a-workflow-current' : '') + ' a-workflow-toolbar-' + name + '"><a class="a-btn big '+(current ? 'alt' : '' )+' a-busy">' + label + '<span class="icon"></span></a></li>');
         b.find('a').attr('href', href);
         toolbar.append(b);
         b.click(function() {
