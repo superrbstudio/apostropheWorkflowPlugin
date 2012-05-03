@@ -140,7 +140,6 @@ class apostropheWorkflowPluginConfiguration extends sfPluginConfiguration
    */
   public function filterPageSettingsForm($event, $form)
   {
-    error_log("Hello");
     if (!$this->canApply())
     {
       if (isset($form['archived']))
@@ -166,14 +165,20 @@ class apostropheWorkflowPluginConfiguration extends sfPluginConfiguration
    * but in draft mode we want to set area.draft_version instead. For this event we 
    * modify $event['area'] directly and return true to signify that we don't want the
    * default behavior. This design means we don't have to figure out how to
-   * undo the default behavior
+   * undo the default behavior.
+   *
+   * Exception: don't try to save drafts of the title, there is nowhere to approve them.
+   * Instead we block non-admins from actually publishing a new page.
    */
   public function filterSetLatestVersion($event, $overridden)
   {
-    if ($this->getMode() === 'draft')
+    if ($event['area']['name'] !== 'title')
     {
-      $event['area']['draft_version'] = $event['version'];
-      $overridden = true;
+      if ($this->getMode() === 'draft')
+      {
+        $event['area']['draft_version'] = $event['version'];
+        $overridden = true;
+      }
     }
     return $overridden;
   }
