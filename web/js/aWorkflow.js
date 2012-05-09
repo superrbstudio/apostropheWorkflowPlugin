@@ -44,7 +44,14 @@ function aWorkflowConstructor()
        //Add the "Apply" button to the toolbar
         apply = button('apply', 'Apply Changes', false, '#');
         apply.click(function() {
-          self.sync();
+          var c=confirm("Are you sure you want to apply these changes?");
+          if(c == true) {
+            self.sync();
+          } else {
+            unbusy(apply);
+          }
+
+          //self.sync();
           return false;
         });
       }
