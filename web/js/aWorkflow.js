@@ -34,17 +34,17 @@ function aWorkflowConstructor()
       // Where to redirect back to (the browser knows best)
       setMode = apostrophe.addParameterToUrl(options.setModeUrl, 'url', document.location.href);
 
-      //If we're in draft mode, apply a class of 'draft' to the toolbar to allow for bettert CSS scoping:
+      //If we're in draft mode, apply a class of 'draft' to the toolbar to allow for better CSS scoping:
       (mode == 'draft' ? $('.a-ui.a-workflow-toolbar').addClass('draft') : $('.a-ui.a-workflow-toolbar').addClass('applied') );
 
-      draft = button('draft', 'Draft', mode === 'draft', apostrophe.addParameterToUrl(setMode, 'mode', 'draft'));
+      draft = button('draft', options.labels.draft, mode === 'draft', apostrophe.addParameterToUrl(setMode, 'mode', 'draft'));
 
       if ((mode === 'draft') && (options.canApply))
       {
        //Add the "Apply" button to the toolbar
-        apply = button('apply', 'Apply Changes', false, '#');
+        apply = button('apply', options.labels.applyChanges, false, '#');
         apply.click(function() {
-          var c=confirm("Are you sure you want to apply these changes?");
+          var c=confirm(options.labels.confirmApply);
           if(c == true) {
             self.sync();
           } else {
@@ -55,9 +55,9 @@ function aWorkflowConstructor()
           return false;
         });
       }
-      applied = button('applied', 'Public', mode === 'applied', apostrophe.addParameterToUrl(setMode, 'mode', 'applied'));
+      applied = button('applied', options.labels.public, mode === 'applied', apostrophe.addParameterToUrl(setMode, 'mode', 'applied'));
 
-      modeAlert = '<li class="a-workflow-toolbar-alert">'+(mode == 'draft' ? 'You are currently in draft mode. Changes you make will not be public until applied.' : 'You are currently in public mode. This is the website as it exists in its published state.')+'</li>';
+      modeAlert = '<li class="a-workflow-toolbar-alert">'+(mode == 'draft' ? options.labels.draftBanner : options.labels.publicBanner)+'</li>';
       toolbar.append(modeAlert);
 
       // Set up the toolbar only once

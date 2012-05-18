@@ -108,13 +108,31 @@ class apostropheWorkflowPluginConfiguration extends sfPluginConfiguration
   {
     if (!$this->jsSetup)
     {
+      // Reasonable default labels. These do get internationalized. If you supply
+      // app_aWorkflow_labels, that gets used (and internationalized) instead.
+      $defaultLabels = array('confirmApply' => "Are you sure you want to apply these changes?",
+        'applyChanges' => 'Apply Changes',
+        'public' => 'Public',
+        'draft' => 'Draft',
+        'draftBanner' => 'You are currently in draft mode. Changes you make will not be public until applied.',
+        'publicBanner' => 'You are currently in public mode. This is the website as it exists in its published state.'
+      );
+      // Configured labels win, but let the defaults shine through for any that are missing
+      $configuredLabels = sfConfig::get('app_aWorkflow_labels', array());
+      $labels = array_merge($defaultLabels, $configuredLabels);
+      foreach ($labels as $key => &$value)
+      {
+        $value = sfContext::getInstance()->getI18N()->__($value, array(), 'aWorkflow');
+      }
+
       aTools::$jsCalls[] = array('callable' => 'aWorkflow.setup(?)', 'args' => array(array(
         'action' => sfContext::getInstance()->getController()->genUrl('@a_workflow_publish'),
         // draft or published: what we are seeing now (we can't edit until we leave published mode)
         'mode' => $this->getMode(),
         // Privilege of applying changes so they become publicly visible
         'canApply' => $this->canApply(),
-        'setModeUrl' => sfContext::getInstance()->getController()->genUrl('@a_workflow_set_mode')
+        'setModeUrl' => sfContext::getInstance()->getController()->genUrl('@a_workflow_set_mode'),
+        'labels' => $labels
         )));
       $this->jsSetup = true;
     }
